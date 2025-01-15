@@ -1,0 +1,36 @@
+creation of new feature space by difference wave 
+
+import numpy as np
+
+# Initialize arrays for storing the left and right averages for each trial
+n_trials = 144
+n_channels = re_epoched_data_ba_co.shape[1]
+n_samples_per_epoch = 36  # Number of time points
+
+left_avg = np.zeros((n_trials, n_channels, n_samples_per_epoch))
+right_avg = np.zeros((n_trials, n_channels, n_samples_per_epoch))
+
+# 1. Compute the average for left and right stimuli per trial
+for trial_idx in range(n_trials):
+    # Get the indices of left-side and right-side stimuli in the current trial
+    trial_epochs = np.arange(trial_idx * 10, (trial_idx + 1) * 10)
+    left_indices = trial_epochs[Y[trial_epochs].flatten() == 1]  # Left-side stimuli (Y=1)
+    right_indices = trial_epochs[Y[trial_epochs].flatten() == 2]  # Right-side stimuli (Y=2)
+
+    # Compute the average across the 5 left and 5 right epochs
+    left_avg[trial_idx] = np.mean(trim_data[left_indices, :, :], axis=0)
+    right_avg[trial_idx] = np.mean(trim_data[right_indices, :, :], axis=0)
+
+# 2. Compute the difference wave (feature space)
+difference_wave = left_avg - right_avg  # Shape: (144, 12, 36)
+
+print("Shape of feature space (difference wave):", difference_wave.shape)  # Should be (144, 12, 36)
+
+# 3. Extract labels (one label per trial)
+T_per_trial = T[::10].flatten()  # Take one label for every 10 epochs (one per trial)
+print("Shape of labels:", T_per_trial.shape)  # Should be (144,)
+print("First 10 labels:", T_per_trial[:])
+
+# Final feature space and labels:
+X_features = difference_wave.reshape(difference_wave.shape[0], -1)  # Flatten channels and time points for SVM
+print("Shape of feature space for SVM:", X_features.shape)  # Should be (144, 432)
