@@ -1,0 +1,74 @@
+#CCA approach based on matlab example code
+
+import numpy as np
+from scipy.stats import pearsonr
+from sklearn.cross_decomposition import CCA
+
+# Labels preparation
+wasTargetLeft = (Y == T)  
+wasGreenLeft = (Y == 1)   
+
+# Data dimensions
+nStim = re_epoched_data_ba_co.shape[0]  
+nChan = re_epoched_data_ba_co.shape[1]  
+nSamp = re_epoched_data_ba_co.shape[2]  
+
+# Reshape EEG data into concatenated time series
+Xreshaped = re_epoched_data_ba_co.reshape(nStim * nSamp, nChan)
+ModelSignal = np.zeros((nStim * nSamp, nSamp))
+Sreshaped = np.zeros(nStim * nSamp)
+Treshaped = np.zeros(nStim * nSamp)
+Yreshaped = np.zeros(nStim * nSamp)
+wasGreenLeftReshaped = np.zeros(nStim * nSamp)
+
+# Build ModelSignal and reshape labels
+for k in range(nStim):  # For each stimulus event
+    idx = slice(k * nSamp, (k + 1) * nSamp)  # Range of indices for this stimulus
+    # Add the EEG data for this epoch
+    ModelSignal[idx, :] = np.eye(nSamp) * np.sign(float(wasTargetLeft[k]) - 0.5)
+    Sreshaped[idx] = S[k]  # Sequence number
+    Treshaped[idx] = T[k]  # Target side
+    Yreshaped[idx] = Y[k]  # Stimulus side
+    wasGreenLeftReshaped[idx] = wasGreenLeft[k]
+
+# Split data into training and testing sets
+trainIdx = np.where(Sreshaped <= 120)[0] 
+testIdx = np.where(Sreshaped > 100)[0]    
+
+# Apply Canonical Correlation Analysis (CCA)
+cca = CCA(n_components=2)
+X_train = Xreshaped[trainIdx, :]
+ModelSignal_train = ModelSignal[trainIdx, :]
+cca.fit(X_train, ModelSignal_train)
+A, B = cca.x_weights_, cca.y_weights_
+
+# Predict the attended target
+sequencesToPredict = np.unique(Sreshaped[testIdx])
+labels = ["green", "red"]
+cues = np.zeros(len(sequencesToPredict))  # True labels
+preds = np.zeros(len(sequencesToPredict))  # Predicted labels
+
+for k, sequence in enumerate(sequencesToPredict):
+    idx = np.where(Sreshaped == sequence)[0]
+    X_spatially_filtered = Xreshaped[idx, :] @ A  # Spatially filtered EEG data
+
+    # Build guessed ModelSignal for testing (assume target is always green)
+    guessedModelSignal = np.zeros((len(idx), nSamp))
+    for k2 in range(len(idx) // nSamp):
+        idx2 = slice(k2 * nSamp, (k2 + 1) * nSamp)
+        guessedModelSignal[idx2, :] = np.eye(nSamp) * \
+                                      np.sign(float(wasGreenLeftReshaped[idx[idx2.start]]) - 0.5)
+
+    ModelSignalEstimate = guessedModelSignal @ B  # Map model signal into CCA space
+    cc = np.array([pearsonr(X_spatially_filtered[:, i], ModelSignalEstimate[:, i])[0]
+                   for i in range(cca.n_components)])
+    
+    # Predict the target: positive correlation means green, negative means red
+    preds[k] = 2 - (np.mean(cc[:2]) > 0)  # 1=green, 2=red
+    cues[k] = Treshaped[idx[0]]
+
+    print(f"Sequence {int(sequence)} predicted as {labels[int(preds[k])-1]}, cue was {labels[int(cues[k])-1]}")
+
+# Compute accuracy
+accuracy = np.sum(preds == cues) / len(cues) * 100
+print(f"Accuracy: {np.sum(preds == cues)}/{len(cues)} correct ({accuracy:.1f}%)")
