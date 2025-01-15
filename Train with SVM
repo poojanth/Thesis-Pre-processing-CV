@@ -1,0 +1,35 @@
+#training with SVM classifier
+
+from sklearn.svm import SVC  # Support Vector Classifier
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import train_test_split
+
+# 1. Prepare the feature space and labels
+X_features = difference_wave.reshape(difference_wave.shape[0], -1)  # Flatten (144, 12, 36) to (144, 432)
+y_labels = T_per_trial  # Labels shape: (144,)
+
+S_per_trial = S[::10].flatten()  # Shape: (144,)
+print("Shape of S_per_trial:", S_per_trial.shape)
+
+# 2. Create train and test indices based on sequence numbers
+train_idx = np.where(S_per_trial <= 120)[0]  # First 120 trials for training
+test_idx = np.where(S_per_trial > 100)[0]    # Last 44 trials for testing
+
+# 2. Split data into training and testing sets 
+X_train = X_features[train_idx]
+X_test = X_features[test_idx]
+y_train = y_labels[train_idx]
+y_test = y_labels[test_idx]
+
+# 4. Train the SVM classifier
+svm_clf = SVC(kernel='linear', C=1.0, random_state=42)  # Linear SVM
+svm_clf.fit(X_train, y_train)
+
+# 5. Make predictions
+predictions = svm_clf.predict(X_test)
+
+# 6. Calculate accuracy and classification report
+accuracy = accuracy_score(y_test, predictions) * 100
+print(f"Accuracy of SVM classifier: {accuracy:.2f}%")
+print("Classification Report:")
+print(classification_report(y_test, predictions))
