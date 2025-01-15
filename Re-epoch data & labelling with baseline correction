@@ -1,0 +1,87 @@
+2. #re-epoching and labeling the data with parameters T,S,&Y (Target,Seq_id,&stimulus side)
+
+n_trials = filtered_data.shape[0]  # Number of trials (144)
+n_channels = filtered_data.shape[1]  # Number of channels (12)
+n_samples_per_trial = filtered_data.shape[2]  # Number of samples per trial (800)
+n_stimuli_per_trial = 10  # Number of smaller epochs per trial
+n_samples_per_epoch = n_samples_per_trial // n_stimuli_per_trial  # Samples per smaller epoch (80)
+
+# Validate divisibility
+assert n_samples_per_trial % n_stimuli_per_trial == 0, "Number of samples per trial must be divisible by stimuli count."
+
+# Reshape the data to split each trial into 10 smaller epochs
+re_epoched_data = filtered_data.reshape(
+    n_trials * n_stimuli_per_trial,  # Total number of smaller epochs (144 × 10 = 1440)
+    n_channels,                     # Number of channels (12)
+    n_samples_per_epoch             # Number of samples per smaller epoch (80)
+)
+
+# Print the new shape of the re-epoched data
+print("Shape of re-epoched data:", re_epoched_data.shape)  # Should be (1440, 12, 80)
+
+# 1. Create Label T (Yes/No converted to 1/2 repeated 10 times)
+# Flatten 'expec' and convert to string for comparison
+flat = [str(e[0][0]) for e in expec]  # Convert to a list of 'yes'/'no'
+T = np.array([[1 if label == 'yes' else 2] * n_stimuli_per_trial for label in flat]).flatten()
+print("Shape of T:", T.shape)  # Should be (1440,)
+
+# 2. Create Label S (Sequence Numbers from 1 to 144 for each 10 smaller epochs)
+S = np.repeat(np.arange(1, n_trials + 1), n_stimuli_per_trial)
+print("Shape of S:", S.shape)  # Should be (1440,)
+
+# Convert T and S to the required shape (1440, 1)
+T = T.reshape(-1, 1)
+S = S.reshape(-1, 1)
+
+# Create Y labels (1440x1)
+Y = []
+
+# Iterate over each trial
+for trial_idx in range(n_trials):
+    # Get stimulus data for this trial (both channels)
+    stim_ch1 = stim_id[0, :, trial_idx]  # Channel 1: Green left / Red right
+    stim_ch2 = stim_id[1, :, trial_idx]  # Channel 2: Red left / Green right
+
+    # Find time points where 1 occurs (stimulus onset)
+    ch1_times = np.where(stim_ch1 == 1)[0]  # Time points for channel 1
+    ch2_times = np.where(stim_ch2 == 1)[0]  # Time points for channel 2
+
+    # Combine and sort all stimulus time points
+    all_times = np.concatenate((ch1_times, ch2_times))
+    all_labels = np.concatenate((np.ones_like(ch1_times), np.full_like(ch2_times, 2)))  # 1 for ch1, 2 for ch2
+    sorted_indices = np.argsort(all_times)  # Sort by time
+
+    # Sort labels according to time
+    sorted_labels = all_labels[sorted_indices]  # Sorted stimulus labels (1 or 2)
+
+    # Append the sorted labels (10 stimuli per trial)
+    Y.extend(sorted_labels)
+
+# Convert to numpy array and reshape to (1440, 1)
+Y = np.array(Y).reshape(-1, 1)
+
+3. #baseline correction 
+
+def baseline_correct_and_shorten_epochs(re_epoched_data, sfreq=50, pre_stim_ms=200, total_epoch_sec=0.720):
+    n_samples_per_epoch = re_epoched_data.shape[2]  # Current epoch length (80)
+    n_pre_stim_samples = int((pre_stim_ms / 1000) * sfreq)  # Pre-stimulus samples (e.g., 10 samples for 200 ms)
+    n_total_samples = int(total_epoch_sec * sfreq)  # Target epoch length (36 samples for 0.720 sec)
+    
+    # Select the indices for the new epoch
+    start_idx = n_pre_stim_samples  # Start after pre-stimulus interval
+    end_idx = start_idx + n_total_samples  # End after 36 samples
+
+    # Perform baseline correction and shorten epochs
+    corrected_epochs = []
+    for epoch in re_epoched_data:
+        baseline_mean = np.mean(epoch[:, :n_pre_stim_samples], axis=1, keepdims=True)  # Baseline mean (over channels)
+        baseline_corrected_epoch = epoch - baseline_mean  # Subtract baseline mean
+        shortened_epoch = baseline_corrected_epoch[:, start_idx:end_idx]  # Shorten to desired length
+        corrected_epochs.append(shortened_epoch)
+
+    corrected_epochs = np.array(corrected_epochs)  # Convert list to NumPy array
+    print(f"New shape of baseline-corrected and shortened epochs: {corrected_epochs.shape}")
+    return corrected_epochs
+
+# Apply baseline correction and shorten epochs to 0.720 sec (36 time points)
+re_epoched_data_ba_co = baseline_correct_and_shorten_epochs(re_epoched_data)    
